@@ -33,3 +33,28 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Add to .gitignore
+echo "
+# Prisma
+*.db
+*.db-journal
+
+# Docker
+*.pid
+*.pid.lock
+
+# Environment files
+.env
+.env*.local
+
+# Next.js
+.next
+out
+build
+
+# Node modules
+node_modules
+" >> .gitignore
+
+/app/generated/prisma
