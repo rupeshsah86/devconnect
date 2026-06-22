@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import { NextAuthOptions } from "next-auth";
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(prisma) as any, // Type assertion to fix adapter compatibility
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -55,7 +55,7 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.username = user.username;
+        token.username = (user as any).username; // Type assertion
       }
       return token;
     },
@@ -69,8 +69,7 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: "/login",
-    signUp: "/register",
-    error: "/login", // Redirect to login on error
+    error: "/login",
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
