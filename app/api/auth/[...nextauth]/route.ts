@@ -1,78 +1,78 @@
-import NextAuth from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { NextAuthOptions } from "next-auth";
+import { z } from "zod";
 
-export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma) as any, // Type assertion to fix adapter compatibility
-  providers: [
-    CredentialsProvider({
-      name: "Credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+// Validation schema for registration
+const registerSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  username: z
+    .string()
+    .min(3, "Username must be at least 3 characters")
+    .regex(
+      /^[a-zA-Z0-9_]+$/,
+      "Username can only contain letters, numbers, and underscores",
+    ),
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+
+    // Validate input
+    const result = registerSchema.safeParse(body);
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error.issues[0].message },
+        { status: 400 },
+      );
+    }
+
+    const { name, username, email, password } = result.data;
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ email }, { username }],
       },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password required");
-        }
+    });
 
-        // Find user by email
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-        });
+    if (existingUser) {
+      return NextResponse.json(
+        { error: "Email or username already taken" },
+        { status: 409 },
+      );
+    }
 
-        if (!user) {
-          throw new Error("No user found with this email");
-        }
+    // Hash password
+    const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || "10");
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        // Verify password
-        const isValid = await bcrypt.compare(
-          credentials.password,
-          user.password,
-        );
-
-        if (!isValid) {
-          throw new Error("Invalid password");
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          username: user.username,
-        };
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        name,
+        username,
+        email,
+        password: hashedPassword,
+        skills: [],
       },
-    }),
-  ],
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        token.username = (user as any).username; // Type assertion
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.id as string;
-        session.user.username = token.username as string;
-      }
-      return session;
-    },
-  },
-  pages: {
-    signIn: "/login",
-    error: "/login",
-  },
-  secret: process.env.NEXTAUTH_SECRET,
-};
+    });
 
-const handler = NextAuth(authOptions);
-export { handler as GET, handler as POST };
+    // Return user without password
+    const { password: _, ...userWithoutPassword } = user;
+
+    return NextResponse.json(
+      { message: "User created successfully", user: userWithoutPassword },
+      { status: 201 },
+    );
+  } catch (error) {
+    console.error("Registration error:", error);
+    return NextResponse.json(
+      { error: "Something went wrong" },
+      { status: 500 },
+    );
+  }
+}
